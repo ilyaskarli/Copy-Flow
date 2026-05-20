@@ -1,0 +1,126 @@
+{
+  "name": "copy-flow",
+  "displayName": "Copy Flow",
+  "publisher": "Labritus",
+  "version": "0.0.5",
+  "description": "Copy file path and line numbers to clipboard. Perfect for collaborating with AI assistants to locate code.",
+  "engines": {
+    "vscode": "^1.104.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "copy",
+    "file",
+    "line",
+    "ai",
+    "assistant",
+    "reference",
+    "path",
+    "line number",
+    "filename",
+    "AI assistant"
+  ],
+  "license": "MIT",
+  "main": "./out/extension.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/whale2002/copy-line.git"
+  },
+  "bugs": {
+    "url": "https://github.com/whale2002/copy-line/issues"
+  },
+  "homepage": "https://github.com/whale2002/copy-line#readme",
+  "icon": "icon.png",
+  "activationEvents": [
+    "onCommand:copy-flow.copySelectionReference"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "copy-flow.copySelectionReference",
+        "title": "Copy selected file and line numbers",
+        "icon": "$(go-to-file)"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "copy-flow.copySelectionReference",
+          "when": "editorTextFocus",
+          "group": "copy-flow@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "copy-flow.copySelectionReference",
+          "when": "editorTextFocus",
+          "group": "copy-flow@1"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "copy-flow.copySelectionReference",
+        "key": "alt+c",
+        "mac": "cmd+alt+c",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Copy Flow",
+      "properties": {
+        "copy-flow.outputFormat": {
+          "type": "string",
+          "enum": [
+            "labeled",
+            "compact",
+            "code-style",
+            "natural"
+          ],
+          "default": "labeled",
+          "description": "Output format: labeled (e.g. File: src/file.ts (line 24-30)), compact (e.g. src/file.ts:24-30), code-style (e.g. src/file.ts:24:30), natural (e.g. at src/file.ts, line 24)"
+        },
+        "copy-flow.useAbsolutePath": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use absolute path instead of relative path"
+        },
+        "copy-flow.showStatusMessage": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show status bar message after copying"
+        },
+        "copy-flow.autoCopyOnSelectionChange": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically copy the file path and line numbers when a text selection is made."
+        },
+        "copy-flow.singleLineFormat": {
+          "type": "string",
+          "default": "line ${line}",
+          "description": "Format when a single line is selected"
+        },
+        "copy-flow.multiLineFormat": {
+          "type": "string",
+          "default": "line ${start}-${end}",
+          "description": "Format when multiple lines are selected"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -w -p .",
+    "vscode:prepublish": "npm run compile",
+    "build": "vsce package -o ./release",
+    "deploy": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.25",
+    "@types/vscode": "^1.104.0",
+    "typescript": "^5.9.3"
+  }
+}
