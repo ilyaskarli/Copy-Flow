@@ -2,6 +2,20 @@ import * as vscode from 'vscode'
 import * as path from 'path'
 
 let debounceTimer: NodeJS.Timeout | undefined
+let lastButtonRange: vscode.Range | undefined
+let isIgnoringSelectionChange = false
+
+// Şık buton dekorasyon tasarımı
+const copyButtonDecorationType = vscode.window.createTextEditorDecorationType({
+  after: {
+    contentText: ' 📋 Copy ',
+    backgroundColor: '#007ACC',
+    color: '#FFFFFF',
+    margin: '0 0 0 10px',
+    fontWeight: 'bold',
+    textDecoration: 'none; padding: 2px 6px; border: 1px solid #005A9E; border-radius: 3px; cursor: pointer;'
+  }
+})
 
 function toFilePath(doc: vscode.TextDocument, useAbsolutePath: boolean): string {
   const filePath = doc.uri.fsPath
@@ -79,6 +93,7 @@ async function copySelection(editor: vscode.TextEditor): Promise<void> {
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  // Manuel kopyalama komutu
   const disposable = vscode.commands.registerCommand('copy-flow.copySelectionReference', async () => {
     const editor = vscode.window.activeTextEditor
     if (!editor) return
@@ -86,22 +101,52 @@ export function activate(context: vscode.ExtensionContext) {
   })
   context.subscriptions.push(disposable)
 
-  const onSelectionChangeDisposable = vscode.window.onDidChangeTextEditorSelection((event) => {
-    const config = vscode.workspace.getConfiguration('copy-flow')
-    const autoCopy = config.get('autoCopyOnSelectionChange', false)
-    if (!autoCopy) return
+  // Seçim değiştiğinde buton gösterme ve buton tıklamasını dinleme mantığı
+  const onSelectionChangeDisposable = vscode.window.onDidChangeTextEditorSelection(async (event) => {
+    if (isIgnoringSelectionChange) return
 
-    // Eğer seçim boşsa (sadece imleç hareket ediyorsa ve seçili metin yoksa) kopyalama yapma
-    const hasSelection = event.selections.some(sel => !sel.isEmpty)
-    if (!hasSelection) return
+    const editor = event.textEditor
+    const selections = event.selections
 
-    if (debounceTimer) {
-      clearTimeout(debounceTimer)
+    // 1. Tıklama Algılama: Eğer seçim boşsa (tek bir imleç varsa) ve daha önce bir buton çizildiyse
+    if (selections.length === 1 && selections[0].isEmpty && lastButtonRange) {
+      const clickPos = selections[0].active
+      // Tıklanan konum butonun olduğu konuma çok yakınsa (aynı satırda ve buton koordinatında)
+      if (clickPos.line === lastButtonRange.end.line && 
+          Math.abs(clickPos.character - lastButtonRange.end.character) <= 1) {
+        
+        isIgnoringSelectionChange = true
+        await copySelection(editor)
+        
+        // Butonu temizle
+        editor.setDecorations(copyButtonDecorationType, [])
+        lastButtonRange = undefined
+        isIgnoringSelectionChange = false
+        return
+      }
     }
 
-    debounceTimer = setTimeout(async () => {
-      await copySelection(event.textEditor)
-    }, 300)
+    // 2. Buton Gösterme: Gerçek bir seçim varsa (seçili metin varsa)
+    const activeSelection = selections.find(s => !s.isEmpty)
+    if (activeSelection) {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer)
+      }
+
+      debounceTimer = setTimeout(() => {
+        // Butonu seçilen alanın en sonuna yerleştir
+        const targetRange = new vscode.Range(activeSelection.end, activeSelection.end)
+        editor.setDecorations(copyButtonDecorationType, [targetRange])
+        lastButtonRange = targetRange
+      }, 300) // Debounce 300ms
+    } else {
+      // Seçim yoksa ve butona tıklanmadıysa butonu kaldır
+      if (debounceTimer) {
+        clearTimeout(debounceTimer)
+      }
+      editor.setDecorations(copyButtonDecorationType, [])
+      lastButtonRange = undefined
+    }
   })
   context.subscriptions.push(onSelectionChangeDisposable)
 }

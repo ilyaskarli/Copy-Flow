@@ -93,11 +93,6 @@
           "default": true,
           "description": "Show status bar message after copying"
         },
-        "copy-flow.autoCopyOnSelectionChange": {
-          "type": "boolean",
-          "default": false,
-          "description": "Automatically copy the file path and line numbers when a text selection is made."
-        },
         "copy-flow.singleLineFormat": {
           "type": "string",
           "default": "line ${line}",
