@@ -87,6 +87,10 @@ async function copySelection(editor: vscode.TextEditor): Promise<void> {
 
   await vscode.env.clipboard.writeText(text)
 
+  // Kopyalama yapıldığında butonu hemen temizle
+  editor.setDecorations(copyButtonDecorationType, [])
+  lastButtonRange = undefined
+
   if (showStatusMessage) {
     vscode.window.setStatusBarMessage(`Copied: ${text}`, 2000)
   }
@@ -108,8 +112,11 @@ export function activate(context: vscode.ExtensionContext) {
     const editor = event.textEditor
     const selections = event.selections
 
-    // 1. Tıklama Algılama: Eğer seçim boşsa (tek bir imleç varsa) ve daha önce bir buton çizildiyse
-    if (selections.length === 1 && selections[0].isEmpty && lastButtonRange) {
+    // 1. Tıklama Algılama: Sadece fare tıklamasıysa, seçim boşsa (tek imleç varsa) ve aktif buton varsa
+    if (event.kind === vscode.TextEditorSelectionChangeKind.Mouse &&
+        selections.length === 1 &&
+        selections[0].isEmpty &&
+        lastButtonRange) {
       const clickPos = selections[0].active
       // Tıklanan konum butonun olduğu konuma çok yakınsa (aynı satırda ve buton koordinatında)
       if (clickPos.line === lastButtonRange.end.line && 
@@ -117,10 +124,6 @@ export function activate(context: vscode.ExtensionContext) {
         
         isIgnoringSelectionChange = true
         await copySelection(editor)
-        
-        // Butonu temizle
-        editor.setDecorations(copyButtonDecorationType, [])
-        lastButtonRange = undefined
         isIgnoringSelectionChange = false
         return
       }
