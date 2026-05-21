@@ -5,15 +5,15 @@ let debounceTimer: NodeJS.Timeout | undefined
 let lastButtonRange: vscode.Range | undefined
 let isIgnoringSelectionChange = false
 
-// Şık buton dekorasyon tasarımı
+// Tema rengi ile tam uyumlu buton tasarımı (emoji kaldırıldı, sadece Copy)
 const copyButtonDecorationType = vscode.window.createTextEditorDecorationType({
   after: {
-    contentText: ' 📋 Copy ',
-    backgroundColor: '#007ACC',
-    color: '#FFFFFF',
+    contentText: ' Copy ',
+    backgroundColor: new vscode.ThemeColor('button.background'),
+    color: new vscode.ThemeColor('button.foreground'),
     margin: '0 0 0 10px',
     fontWeight: 'bold',
-    textDecoration: 'none; padding: 2px 6px; border: 1px solid #005A9E; border-radius: 3px; cursor: pointer;'
+    textDecoration: 'none; padding: 2px 6px; border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 3px; cursor: pointer;'
   }
 })
 
@@ -35,64 +35,72 @@ function toFilePath(doc: vscode.TextDocument, useAbsolutePath: boolean): string 
   return path.basename(filePath)
 }
 
-function formatLineRange(start: number, end: number, format: string): string {
-  const lineInfo = format
-    .replace('${start}', String(start))
-    .replace('${end}', String(end))
-    .replace('${line}', String(start))
-  return lineInfo
-}
-
-function formatSelection(sel: vscode.Selection, useAbsolutePath: boolean, outputFormat: string): string {
-  const editor = vscode.window.activeTextEditor
-  if (!editor) return ''
-
+async function copySelectionWithOptions(editor: vscode.TextEditor): Promise<void> {
   const doc = editor.document
-  const filePath = toFilePath(doc, useAbsolutePath)
-  const start = sel.start.line + 1
-  const end = sel.end.line + 1
+  const useAbsolutePath = vscode.workspace.getConfiguration('copy-flow').get('useAbsolutePath', false)
+  const showStatusMessage = vscode.workspace.getConfiguration('copy-flow').get('showStatusMessage', true)
 
-  const config = vscode.workspace.getConfiguration('copy-flow')
-  const singleLineFormat = config.get('singleLineFormat', 'line ${line}')
-  const multiLineFormat = config.get('multiLineFormat', 'line ${start}-${end}')
+  const selections = editor.selections && editor.selections.length ? editor.selections : [editor.selection]
+  const activeSelections = selections.filter(s => !s.isEmpty)
+  const targets = activeSelections.length > 0 ? activeSelections : selections
 
-  const lineRangeText = sel.isEmpty || start === end
-    ? formatLineRange(start, start, singleLineFormat)
-    : formatLineRange(start, end, multiLineFormat)
+  if (targets.length === 0) return
 
-  switch (outputFormat) {
-    case 'labeled':
-      return `File: ${filePath} (${lineRangeText})`
-    case 'compact':
-      return `${filePath}:${start}${start !== end ? '-' + end : ''}`
-    case 'code-style':
-      return `${filePath}:${start}${start !== end ? ':' + end : ''}`
-    case 'natural':
-      const rangeText = start === end ? `line ${start}` : `lines ${start}-${end}`
-      return `at ${filePath}, ${rangeText}`
-    default:
-      return `File: ${filePath} (${lineRangeText})`
+  // Kullanıcı formatı: [chat_view.dart](lib/views/chats/chat_view.dart) line 706-716
+  const referenceParts = targets.map(sel => {
+    const filePath = toFilePath(doc, useAbsolutePath)
+    const basename = path.basename(doc.uri.fsPath)
+    const start = sel.start.line + 1
+    const end = sel.end.line + 1
+    const rangeText = start === end ? `line ${start}` : `line ${start}-${end}`
+    return {
+      reference: `[${basename}](${filePath}) ${rangeText}`,
+      code: doc.getText(sel)
+    }
+  })
+
+  const sampleReference = referenceParts[0].reference
+
+  // Seçenek paneli (Quick Pick)
+  const items = [
+    {
+      label: 'Copy Reference Link',
+      detail: sampleReference,
+      action: 'reference'
+    },
+    {
+      label: 'Copy Code Snapshot with Reference',
+      detail: `${sampleReference} + Code Block`,
+      action: 'snapshot'
+    }
+  ]
+
+  const selected = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Select Copy Option'
+  })
+
+  if (!selected) return
+
+  let textToCopy = ''
+  if (selected.action === 'reference') {
+    textToCopy = referenceParts.map(p => p.reference).join('\n')
+  } else {
+    textToCopy = referenceParts.map(p => {
+      if (!p.code.trim()) {
+        return p.reference
+      }
+      return `${p.reference}\n\`\`\`${doc.languageId}\n${p.code}\n\`\`\``
+    }).join('\n\n')
   }
-}
 
-async function copySelection(editor: vscode.TextEditor): Promise<void> {
-  const config = vscode.workspace.getConfiguration('copy-flow')
-  const outputFormat = config.get('outputFormat', 'labeled')
-  const useAbsolutePath = config.get('useAbsolutePath', false)
-  const showStatusMessage = config.get('showStatusMessage', true)
-
-  const sels = editor.selections && editor.selections.length ? editor.selections : [editor.selection]
-  const parts = sels.map(s => formatSelection(s, useAbsolutePath, outputFormat))
-  const text = parts.join('\n')
-
-  await vscode.env.clipboard.writeText(text)
+  await vscode.env.clipboard.writeText(textToCopy)
 
   // Kopyalama yapıldığında butonu hemen temizle
   editor.setDecorations(copyButtonDecorationType, [])
   lastButtonRange = undefined
 
   if (showStatusMessage) {
-    vscode.window.setStatusBarMessage(`Copied: ${text}`, 2000)
+    vscode.window.setStatusBarMessage(`Copied to Clipboard!`, 2000)
   }
 }
 
@@ -101,7 +109,7 @@ export function activate(context: vscode.ExtensionContext) {
   const disposable = vscode.commands.registerCommand('copy-flow.copySelectionReference', async () => {
     const editor = vscode.window.activeTextEditor
     if (!editor) return
-    await copySelection(editor)
+    await copySelectionWithOptions(editor)
   })
   context.subscriptions.push(disposable)
 
@@ -123,7 +131,7 @@ export function activate(context: vscode.ExtensionContext) {
           Math.abs(clickPos.character - lastButtonRange.end.character) <= 1) {
         
         isIgnoringSelectionChange = true
-        await copySelection(editor)
+        await copySelectionWithOptions(editor)
         isIgnoringSelectionChange = false
         return
       }
