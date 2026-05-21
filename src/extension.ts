@@ -2,31 +2,41 @@ import * as vscode from 'vscode'
 import * as path from 'path'
 
 let debounceTimer: NodeJS.Timeout | undefined
-let lastButtonRange: vscode.Range | undefined
+let lastCopyButtonRange: vscode.Range | undefined
+let lastSnapshotButtonRange: vscode.Range | undefined
 let lastActiveSelection: vscode.Selection | undefined
 let isIgnoringSelectionChange = false
 
-// Tema uyumlu, emoji barındırmayan, siyah renkli 'Copy' butonu
+// Tema uyumlu, siyah renkli, mutlak konumlandırılmış (kod düzenini bozmayan) 'Copy' butonu
 const copyButtonDecorationType = vscode.window.createTextEditorDecorationType({
   after: {
     contentText: 'Copy',
     backgroundColor: '#000000',
     color: '#FFFFFF',
-    margin: '2px 0 0 10px',
     fontWeight: 'bold',
-    textDecoration: 'none; padding: 2px 6px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 3px; cursor: pointer; display: block; width: fit-content;'
+    textDecoration: 'none; padding: 2px 6px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 3px; cursor: pointer; position: absolute; z-index: 100; margin-left: 10px;'
   }
 })
 
-// Tema uyumlu, emoji barındırmayan, siyah renkli 'Snapshot' butonu (alt alta durması için block)
+// Tema uyumlu, siyah renkli, mutlak konumlandırılmış 'Snapshot' butonu (bir alt satırda durur)
 const snapshotButtonDecorationType = vscode.window.createTextEditorDecorationType({
   after: {
     contentText: 'Snapshot',
     backgroundColor: '#000000',
     color: '#FFFFFF',
-    margin: '4px 0 0 10px',
     fontWeight: 'bold',
-    textDecoration: 'none; padding: 2px 6px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 3px; cursor: pointer; display: block; width: fit-content;'
+    textDecoration: 'none; padding: 2px 6px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 3px; cursor: pointer; position: absolute; z-index: 100; margin-left: 10px;'
+  }
+})
+
+// Son satırda aynı satıra yan yana konumlandırmak için 'Snapshot' butonu
+const snapshotButtonSameLineDecorationType = vscode.window.createTextEditorDecorationType({
+  after: {
+    contentText: 'Snapshot',
+    backgroundColor: '#000000',
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    textDecoration: 'none; padding: 2px 6px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 3px; cursor: pointer; position: absolute; z-index: 100; margin-left: 70px;'
   }
 })
 
@@ -75,7 +85,9 @@ async function copySelectionDirect(editor: vscode.TextEditor, sel: vscode.Select
   // Kopyalama yapıldığında butonları hemen temizle
   editor.setDecorations(copyButtonDecorationType, [])
   editor.setDecorations(snapshotButtonDecorationType, [])
-  lastButtonRange = undefined
+  editor.setDecorations(snapshotButtonSameLineDecorationType, [])
+  lastCopyButtonRange = undefined
+  lastSnapshotButtonRange = undefined
   lastActiveSelection = undefined
 
   if (showStatusMessage) {
@@ -111,11 +123,13 @@ export function activate(context: vscode.ExtensionContext) {
     if (event.kind === vscode.TextEditorSelectionChangeKind.Mouse &&
         selections.length === 1 &&
         selections[0].isEmpty &&
-        lastButtonRange) {
+        lastCopyButtonRange) {
       const clickPos = selections[0].active
       
-      // Tıklanan satır butonun olduğu satırdan 1 satır sonraysa -> Copy (Referans Link)
-      if (clickPos.line === lastButtonRange.end.line + 1) {
+      // Tıklanan satır Copy butonunun olduğu satırsa -> Copy (Referans Link)
+      if (clickPos.line === lastCopyButtonRange.end.line && 
+          Math.abs(clickPos.character - lastCopyButtonRange.end.character) <= 1) {
+        
         isIgnoringSelectionChange = true
         if (lastActiveSelection) {
           await copySelectionDirect(editor, lastActiveSelection, 'reference')
@@ -124,8 +138,11 @@ export function activate(context: vscode.ExtensionContext) {
         return
       }
       
-      // Tıklanan satır butonun olduğu satırdan 2 satır sonraysa -> Snapshot (Kod Snapshot)
-      if (clickPos.line === lastButtonRange.end.line + 2) {
+      // Tıklanan satır Snapshot butonunun olduğu satırsa -> Snapshot
+      if (lastSnapshotButtonRange && 
+          clickPos.line === lastSnapshotButtonRange.end.line &&
+          Math.abs(clickPos.character - lastSnapshotButtonRange.end.character) <= 1) {
+        
         isIgnoringSelectionChange = true
         if (lastActiveSelection) {
           await copySelectionDirect(editor, lastActiveSelection, 'snapshot')
@@ -145,11 +162,26 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       debounceTimer = setTimeout(() => {
-        // Butonları seçilen alanın en sonuna yerleştir
-        const targetRange = new vscode.Range(activeSelection.end, activeSelection.end)
-        editor.setDecorations(copyButtonDecorationType, [targetRange])
-        editor.setDecorations(snapshotButtonDecorationType, [targetRange])
-        lastButtonRange = targetRange
+        const doc = editor.document
+        const targetRangeCopy = new vscode.Range(activeSelection.end, activeSelection.end)
+        editor.setDecorations(copyButtonDecorationType, [targetRangeCopy])
+        lastCopyButtonRange = targetRangeCopy
+
+        // Bir alt satır varsa Snapshot'ı oraya absolute olarak yerleştir (böylece satırları kaydırmaz)
+        const nextLine = activeSelection.end.line + 1
+        if (nextLine < doc.lineCount) {
+          const nextLineText = doc.lineAt(nextLine)
+          const targetRangeSnapshot = new vscode.Range(
+            new vscode.Position(nextLine, nextLineText.text.length),
+            new vscode.Position(nextLine, nextLineText.text.length)
+          )
+          editor.setDecorations(snapshotButtonDecorationType, [targetRangeSnapshot])
+          lastSnapshotButtonRange = targetRangeSnapshot
+        } else {
+          // Eğer dosyanın son satırıysa, aynı satırda yan yana yerleştir
+          editor.setDecorations(snapshotButtonSameLineDecorationType, [targetRangeCopy])
+          lastSnapshotButtonRange = targetRangeCopy
+        }
       }, 300) // Debounce 300ms
     } else {
       // Seçim yoksa ve butonlara tıklanmadıysa butonları kaldır
@@ -158,8 +190,9 @@ export function activate(context: vscode.ExtensionContext) {
       }
       editor.setDecorations(copyButtonDecorationType, [])
       editor.setDecorations(snapshotButtonDecorationType, [])
-      lastButtonRange = undefined
-      // lastActiveSelection'ı hemen sıfırlama ki komut üzerinden kopyalama yapılabilsin
+      editor.setDecorations(snapshotButtonSameLineDecorationType, [])
+      lastCopyButtonRange = undefined
+      lastSnapshotButtonRange = undefined
     }
   })
   context.subscriptions.push(onSelectionChangeDisposable)
