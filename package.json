@@ -42,6 +42,11 @@
         "command": "copy-flow.copySelectionReference",
         "title": "Copy selected file and line numbers",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "copy-line.copySelectionReference",
+        "title": "Copy selected file and line numbers (Legacy)",
+        "icon": "$(go-to-file)"
       }
     ],
     "menus": {

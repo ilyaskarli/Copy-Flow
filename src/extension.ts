@@ -97,8 +97,7 @@ async function copySelectionDirect(editor: vscode.TextEditor, sel: vscode.Select
 }
 
 export function activate(context: vscode.ExtensionContext) {
-  // Manuel kopyalama komutu (Alt + C)
-  const disposable = vscode.commands.registerCommand('copy-flow.copySelectionReference', async () => {
+  const handleCopyCommand = async () => {
     const editor = vscode.window.activeTextEditor
     if (!editor) return
     
@@ -109,8 +108,15 @@ export function activate(context: vscode.ExtensionContext) {
     } else {
       await copySelectionDirect(editor, new vscode.Selection(editor.selection.active, editor.selection.active), 'reference')
     }
-  })
-  context.subscriptions.push(disposable)
+  }
+
+  // Manuel kopyalama komutu (Alt + C - Yeni Komut ID'si)
+  const disposable1 = vscode.commands.registerCommand('copy-flow.copySelectionReference', handleCopyCommand)
+  context.subscriptions.push(disposable1)
+
+  // Manuel kopyalama komutu (Alt + C - Eski Komut ID'si - Kullanıcı ayarlarındaki eski keybinding'ler için fallback)
+  const disposable2 = vscode.commands.registerCommand('copy-line.copySelectionReference', handleCopyCommand)
+  context.subscriptions.push(disposable2)
 
   // Seçim değiştiğinde buton gösterme ve buton tıklamasını dinleme mantığı
   const onSelectionChangeDisposable = vscode.window.onDidChangeTextEditorSelection(async (event) => {
