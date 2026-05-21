@@ -34,7 +34,7 @@
   "homepage": "https://github.com/whale2002/copy-line#readme",
   "icon": "icon.png",
   "activationEvents": [
-    "onCommand:copy-flow.copySelectionReference"
+    "onStartupFinished"
   ],
   "contributes": {
     "commands": [
