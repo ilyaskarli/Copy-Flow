@@ -47,6 +47,11 @@
         "command": "copy-line.copySelectionReference",
         "title": "Copy selected file and line numbers (Legacy)",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "copy-flow.copySelectionSnapshot",
+        "title": "Copy selected code snapshot",
+        "icon": "$(go-to-file)"
       }
     ],
     "menus": {
@@ -55,6 +60,11 @@
           "command": "copy-flow.copySelectionReference",
           "when": "editorTextFocus",
           "group": "copy-flow@1"
+        },
+        {
+          "command": "copy-flow.copySelectionSnapshot",
+          "when": "editorTextFocus",
+          "group": "copy-flow@2"
         }
       ],
       "editor/title": [
@@ -70,6 +80,12 @@
         "command": "copy-flow.copySelectionReference",
         "key": "alt+c",
         "mac": "cmd+alt+c",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "copy-flow.copySelectionSnapshot",
+        "key": "alt+s",
+        "mac": "cmd+alt+s",
         "when": "editorTextFocus"
       }
     ],

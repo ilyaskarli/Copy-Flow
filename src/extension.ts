@@ -1,46 +1,39 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
 
-let debounceTimer: NodeJS.Timeout | undefined
-let lastCopyButtonRange: vscode.Range | undefined
 let lastActiveSelection: vscode.Selection | undefined
 let isIgnoringSelectionChange = false
 
-// Tema uyumlu, siyah renkli, dikey olarak alt alta hizalanmış butonlar (kod düzenini bozmayan)
-const verticalButtonsDecorationType = vscode.window.createTextEditorDecorationType({
-  before: {
-    contentText: 'Copy',
-    backgroundColor: '#000000',
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    textDecoration: 'none; padding: 2px 6px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 3px; cursor: pointer; position: absolute; z-index: 100; margin-left: 10px; top: 0px;'
-  },
-  after: {
-    contentText: 'Snapshot',
-    backgroundColor: '#000000',
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    textDecoration: 'none; padding: 2px 6px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 3px; cursor: pointer; position: absolute; z-index: 100; margin-left: 10px; top: 24px;'
-  }
-})
+// CodeLens Sağlayıcı Sınıfı
+class CopyFlowCodeLensProvider implements vscode.CodeLensProvider {
+  private _onDidChangeCodeLenses = new vscode.EventEmitter<void>()
+  readonly onDidChangeCodeLenses = this._onDidChangeCodeLenses.event
 
-// Son satırda aynı satıra yan yana konumlandırmak için butonlar
-const sameLineButtonsDecorationType = vscode.window.createTextEditorDecorationType({
-  before: {
-    contentText: 'Copy',
-    backgroundColor: '#000000',
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    textDecoration: 'none; padding: 2px 6px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 3px; cursor: pointer; position: absolute; z-index: 100; margin-left: 10px; top: 0px;'
-  },
-  after: {
-    contentText: 'Snapshot',
-    backgroundColor: '#000000',
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    textDecoration: 'none; padding: 2px 6px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 3px; cursor: pointer; position: absolute; z-index: 100; margin-left: 70px; top: 0px;'
+  public refresh() {
+    this._onDidChangeCodeLenses.fire()
   }
-})
+
+  provideCodeLenses(document: vscode.TextDocument, token: vscode.CancellationToken): vscode.CodeLens[] {
+    const editor = vscode.window.activeTextEditor
+    if (!editor || editor.document !== document) return []
+
+    const selection = editor.selection
+    if (selection && !selection.isEmpty) {
+      const range = new vscode.Range(selection.start, selection.start)
+      return [
+        new vscode.CodeLens(range, {
+          title: "📋 Copy Reference",
+          command: "copy-flow.copySelectionReference"
+        }),
+        new vscode.CodeLens(range, {
+          title: "📸 Copy Snapshot",
+          command: "copy-flow.copySelectionSnapshot"
+        })
+      ]
+    }
+    return []
+  }
+}
 
 function toFilePath(doc: vscode.TextDocument, useAbsolutePath: boolean): string {
   const filePath = doc.uri.fsPath
@@ -84,11 +77,11 @@ async function copySelectionDirect(editor: vscode.TextEditor, sel: vscode.Select
 
   await vscode.env.clipboard.writeText(textToCopy)
 
-  // Kopyalama yapıldığında butonları hemen temizle
-  editor.setDecorations(verticalButtonsDecorationType, [])
-  editor.setDecorations(sameLineButtonsDecorationType, [])
-  lastCopyButtonRange = undefined
+  // Seçimi sıfırla (Böylece CodeLens de hemen temizlenir)
+  isIgnoringSelectionChange = true
+  editor.selection = new vscode.Selection(editor.selection.active, editor.selection.active)
   lastActiveSelection = undefined
+  isIgnoringSelectionChange = false
 
   if (showStatusMessage) {
     const modeName = mode === 'snapshot' ? 'Snapshot' : 'Reference'
@@ -97,6 +90,8 @@ async function copySelectionDirect(editor: vscode.TextEditor, sel: vscode.Select
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  const codeLensProvider = new CopyFlowCodeLensProvider()
+
   const handleCopyCommand = async () => {
     const editor = vscode.window.activeTextEditor
     if (!editor) return
@@ -108,6 +103,21 @@ export function activate(context: vscode.ExtensionContext) {
     } else {
       await copySelectionDirect(editor, new vscode.Selection(editor.selection.active, editor.selection.active), 'reference')
     }
+    codeLensProvider.refresh()
+  }
+
+  const handleSnapshotCommand = async () => {
+    const editor = vscode.window.activeTextEditor
+    if (!editor) return
+    
+    if (editor.selection && !editor.selection.isEmpty) {
+      await copySelectionDirect(editor, editor.selection, 'snapshot')
+    } else if (lastActiveSelection) {
+      await copySelectionDirect(editor, lastActiveSelection, 'snapshot')
+    } else {
+      await copySelectionDirect(editor, new vscode.Selection(editor.selection.active, editor.selection.active), 'snapshot')
+    }
+    codeLensProvider.refresh()
   }
 
   // Manuel kopyalama komutu (Alt + C - Yeni Komut ID'si)
@@ -118,101 +128,31 @@ export function activate(context: vscode.ExtensionContext) {
   const disposable2 = vscode.commands.registerCommand('copy-line.copySelectionReference', handleCopyCommand)
   context.subscriptions.push(disposable2)
 
-  // Seçim değiştiğinde buton gösterme ve buton tıklamasını dinleme mantığı
-  const onSelectionChangeDisposable = vscode.window.onDidChangeTextEditorSelection(async (event) => {
+  // Snapshot komutu (Alt + S)
+  const disposableSnapshot = vscode.commands.registerCommand('copy-flow.copySelectionSnapshot', handleSnapshotCommand)
+  context.subscriptions.push(disposableSnapshot)
+
+  // CodeLens Sağlayıcı Tescili
+  const codeLensDisposable = vscode.languages.registerCodeLensProvider({ pattern: '**' }, codeLensProvider)
+  context.subscriptions.push(codeLensDisposable)
+
+  // Seçim değiştiğinde CodeLens tazeleme
+  const onSelectionChangeDisposable = vscode.window.onDidChangeTextEditorSelection((event) => {
     if (isIgnoringSelectionChange) return
 
     const editor = event.textEditor
     const selections = event.selections
-
-    // 1. Tıklama Algılama: Sadece fare tıklamasıysa, seçim boşsa (tek imleç varsa) ve aktif buton varsa
-    if (event.kind === vscode.TextEditorSelectionChangeKind.Mouse &&
-        selections.length === 1 &&
-        selections[0].isEmpty &&
-        lastCopyButtonRange) {
-      const clickPos = selections[0].active
-      const isLastLine = lastCopyButtonRange.end.line === editor.document.lineCount - 1
-      
-      // Tıklanan satır Copy butonunun olduğu satırsa -> Copy (Referans Link)
-      if (clickPos.line === lastCopyButtonRange.end.line && 
-          Math.abs(clickPos.character - lastCopyButtonRange.end.character) <= 3) {
-        
-        isIgnoringSelectionChange = true
-        if (lastActiveSelection) {
-          await copySelectionDirect(editor, lastActiveSelection, 'reference')
-        }
-        isIgnoringSelectionChange = false
-        return
-      }
-      
-      // Tıklanan satır bir alt satırsa ve son satır değilse -> Snapshot
-      if (!isLastLine && clickPos.line === lastCopyButtonRange.end.line + 1) {
-        const lineLen = editor.document.lineAt(clickPos.line).text.length
-        const targetChar = lastCopyButtonRange.end.character
-        const clickChar = clickPos.character
-        
-        // Klik karakteri hedef karaktere yakınsa veya bir alt satır daha kısaysa ve imleç o satırın sonuna caplenmişse
-        if (Math.abs(clickChar - targetChar) <= 8 || (targetChar > lineLen && clickChar >= lineLen - 1)) {
-          isIgnoringSelectionChange = true
-          if (lastActiveSelection) {
-            await copySelectionDirect(editor, lastActiveSelection, 'snapshot')
-          }
-          isIgnoringSelectionChange = false
-          return
-        }
-      }
-
-      // Eğer son satırsa ve Snapshot butonu yan yanaysa -> Snapshot
-      if (isLastLine && clickPos.line === lastCopyButtonRange.end.line &&
-          clickPos.character >= lastCopyButtonRange.end.character + 4 &&
-          clickPos.character <= lastCopyButtonRange.end.character + 14) {
-        
-        isIgnoringSelectionChange = true
-        if (lastActiveSelection) {
-          await copySelectionDirect(editor, lastActiveSelection, 'snapshot')
-        }
-        isIgnoringSelectionChange = false
-        return
-      }
-    }
-
-    // 2. Buton Gösterme: Gerçek bir seçim varsa (seçili metin varsa)
     const activeSelection = selections.find(s => !s.isEmpty)
+
     if (activeSelection) {
-      lastActiveSelection = activeSelection // Seçilen alanı hafızaya al
-
-      if (debounceTimer) {
-        clearTimeout(debounceTimer)
-      }
-
-      debounceTimer = setTimeout(() => {
-        const doc = editor.document
-        const targetRangeCopy = new vscode.Range(activeSelection.end, activeSelection.end)
-        lastCopyButtonRange = targetRangeCopy
-
-        // Son satır değilse dikey hizalanmış (before/after birleşik) butonları göster
-        if (activeSelection.end.line < doc.lineCount - 1) {
-          editor.setDecorations(verticalButtonsDecorationType, [targetRangeCopy])
-        } else {
-          // Son satırsa yan yana hizalanmış butonları göster
-          editor.setDecorations(sameLineButtonsDecorationType, [targetRangeCopy])
-        }
-      }, 300) // Debounce 300ms
+      lastActiveSelection = activeSelection
     } else {
-      // Seçim yoksa ve butonlara tıklanmadıysa butonları kaldır
-      if (debounceTimer) {
-        clearTimeout(debounceTimer)
-      }
-      editor.setDecorations(verticalButtonsDecorationType, [])
-      editor.setDecorations(sameLineButtonsDecorationType, [])
-      lastCopyButtonRange = undefined
+      lastActiveSelection = undefined
     }
+
+    codeLensProvider.refresh()
   })
   context.subscriptions.push(onSelectionChangeDisposable)
 }
 
-export function deactivate() {
-  if (debounceTimer) {
-    clearTimeout(debounceTimer)
-  }
-}
+export function deactivate() {}
