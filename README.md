@@ -2,6 +2,9 @@
 
 A VS Code extension to copy file path and line numbers automatically on selection.
 
+
+<img width="657" height="341" alt="image" src="https://github.com/user-attachments/assets/6f218944-ffc2-49ae-9727-c05ea758ab06" />
+
 ## 🚀 How to Enable Auto-Copy
 
 1. Open VS Code Settings (`Ctrl + ,`).
