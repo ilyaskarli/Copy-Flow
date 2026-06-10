@@ -2,7 +2,7 @@
   "name": "copy-flow",
   "displayName": "Copy Flow",
   "publisher": "Labritus",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Copy file path and line numbers to clipboard. Perfect for collaborating with AI assistants to locate code.",
   "engines": {
     "vscode": "^1.104.0"
